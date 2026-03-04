@@ -1,0 +1,440 @@
+-- 3DMainMenuCamera // StaterPlayerScripts
+
+local player = game.Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local runService = game:GetService("RunService")
+local uis = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local MarketplaceService = game:GetService("MarketplaceService")
+
+local screen = workspace:WaitForChild("3DMainMenu"):WaitForChild("Screen")
+local surfaceGui = screen:WaitForChild("SurfaceGui")
+
+local menuContainer = surfaceGui:WaitForChild("MenuContainer")
+local mainFrame = menuContainer:WaitForChild("Main")
+local teamsFrame = menuContainer:WaitForChild("Teams")
+local storeFrame = menuContainer:WaitForChild("Store")
+local gpInfoTemplate = menuContainer:WaitForChild("GpInfoTemplate") -- moved outside Store!
+local settingsFrame = menuContainer:WaitForChild("Settings")
+local badgesFrame = menuContainer:WaitForChild("Badges")
+local updatesFrame = menuContainer:WaitForChild("Updates")
+
+local cameraPart = workspace:WaitForChild("3DMainMenu"):WaitForChild("CameraPart")
+local BASE_CFRAME = cameraPart.CFrame
+
+local OFFSET_STRENGTH = 5
+local RETURN_SPEED = 5
+
+local tweenTime = 0.5
+
+-----------------------------------------
+-- Initialize menu UI state
+-----------------------------------------
+
+local function resetMenuFrames()
+	mainFrame.Visible = true
+	mainFrame.ClipsDescendants = false  -- Force it off
+	teamsFrame.Visible = false
+	teamsFrame.ClipsDescendants = false -- also force off here
+	storeFrame.Visible = false
+	storeFrame.ClipsDescendants = false -- and here too
+	gpInfoTemplate.Visible = false
+	settingsFrame.Visible = false
+	settingsFrame.ClipsDescendants = false
+	settingsFrame.Position = UDim2.new(-1, 0, 0, 0)
+
+	-- Reset positions to center / offscreen
+	mainFrame.Position = UDim2.new(0, 0, 0, 0)
+	teamsFrame.Position = UDim2.new(-1, 0, 0, 0) -- offscreen left
+	storeFrame.Position = UDim2.new(-1, 0, 0, 0)
+	gpInfoTemplate.Position = UDim2.new(1, 0, 0, 0)
+end
+
+-- Print ClipsDescendants states for debugging
+print("Main ClipsDescendants:", mainFrame.ClipsDescendants)
+print("Teams ClipsDescendants:", teamsFrame.ClipsDescendants)
+print("Store ClipsDescendants:", storeFrame.ClipsDescendants)
+
+-- Update Username TextLabel with player display name
+local usernameLabel = mainFrame:WaitForChild("Username")
+
+-- typewriter config
+local typeSpeed = 0.04
+local fullText = "WELCOME, " .. player.DisplayName:upper()
+usernameLabel.Text = ""
+
+-- paste your soundid here
+local TYPE_SOUND_ID = "rbxassetid://8816939097"
+
+local function playTypeSound()
+	if TYPE_SOUND_ID == "" then return end
+	
+	local sound = Instance.new("Sound")
+	sound.SoundId = TYPE_SOUND_ID
+	sound.Volume = 0.25
+	sound.PlayOnRemove = false
+	sound.Parent = workspace
+	sound:Play()
+
+	-- cleanup
+	sound.Ended:Connect(function()
+		sound:Destroy()
+	end)
+end
+
+local function typeWriter(label, text)
+	for i = 1, #text do
+		label.Text = string.sub(text, 1, i)
+		playTypeSound()
+		task.wait(typeSpeed)
+	end
+end
+
+task.spawn(function()
+	typeWriter(usernameLabel, fullText)
+end)
+
+-----------------------------------------
+-- Tween helper and global tween lock
+-----------------------------------------
+
+local isTweening = false
+
+local function tweenFrame(frame, newPos)
+	local tween = TweenService:Create(frame, TweenInfo.new(tweenTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Position = newPos
+	})
+	return tween
+end
+
+local function tweenFramesWithLock(tweenList, onComplete)
+	isTweening = true
+	local completedCount = 0
+	local total = #tweenList
+
+	for _, tween in ipairs(tweenList) do
+		tween.Completed:Connect(function()
+			completedCount = completedCount + 1
+			if completedCount >= total then
+				isTweening = false
+				if onComplete then
+					onComplete()
+				end
+			end
+		end)
+		tween:Play()
+	end
+end
+
+-----------------------------------------
+-- Variables for positions
+-----------------------------------------
+
+local originalStorePos = storeFrame.Position
+local originalGpInfoPos = gpInfoTemplate.Position
+
+-----------------------------------------
+-- Button cooldown system
+-----------------------------------------
+
+local buttonCooldowns = {}
+local COOLDOWN_TIME = 1.5 -- seconds cooldown per button
+
+local function canClick(button)
+	if buttonCooldowns[button] or isTweening then
+		return false
+	else
+		buttonCooldowns[button] = true
+		delay(COOLDOWN_TIME, function()
+			buttonCooldowns[button] = nil
+		end)
+		return true
+	end
+end
+
+local function connectButtonWithCooldown(button, callback)
+	if button and button:IsA("TextButton") then
+		button.MouseButton1Click:Connect(function()
+			if canClick(button) then
+				callback()
+			end
+		end)
+	end
+end
+
+-----------------------------------------
+-- Gamepass purchase system variables
+-----------------------------------------
+
+local currentGamepassID = nil
+local purchaseButton = gpInfoTemplate:FindFirstChild("Purchase")
+
+-----------------------------------------
+-- Update GP Info Template fields and Purchase button on GP button click
+-----------------------------------------
+
+for _, gpButton in ipairs(storeFrame.Gamepasses:GetChildren()) do
+	if gpButton:IsA("TextButton") then
+		connectButtonWithCooldown(gpButton, function()
+			-- Update GpInfoTemplate labels
+			local descValue = gpButton:FindFirstChild("GamepassDescription")
+			local nameValue = gpButton:FindFirstChild("GamepassName")
+			local priceValue = gpButton:FindFirstChild("GamepassPrice")
+
+			local gpDescLabel = gpInfoTemplate:FindFirstChild("GamepassDescription")
+			local gpNameLabel = gpInfoTemplate:FindFirstChild("GamepassName")
+			local gpPriceLabel = gpInfoTemplate:FindFirstChild("GamepassPrice")
+
+			if gpDescLabel then
+				gpDescLabel.Text = (descValue and descValue.Value) or "No description"
+			end
+			if gpNameLabel then
+				gpNameLabel.Text = (nameValue and nameValue.Value) or "Unknown Gamepass"
+			end
+			if gpPriceLabel then
+				gpPriceLabel.Text = tostring((priceValue and priceValue.Value) or 0)
+			end
+
+			-- Store GamepassID
+			local gamepassIDValue = gpButton:FindFirstChild("GamepassID")
+			if gamepassIDValue and gamepassIDValue:IsA("NumberValue") then
+				currentGamepassID = gamepassIDValue.Value
+			else
+				currentGamepassID = nil
+				warn("GamepassID NumberValue missing on clicked GP button")
+			end
+
+			-- Check ownership async and update purchase button text and state
+			spawn(function()
+				local owned = false
+				if currentGamepassID then
+					local success, result = pcall(function()
+						return MarketplaceService:UserOwnsGamePassAsync(player.UserId, currentGamepassID)
+					end)
+					if success then
+						owned = result
+					else
+						warn("Failed to check ownership:", result)
+					end
+				end
+
+				pcall(function()
+					if owned then
+						purchaseButton.Text = "OWNED"
+						purchaseButton.Active = false
+					else
+						purchaseButton.Text = "PURCHASE"
+						purchaseButton.Active = true
+					end
+				end)
+			end)
+
+			-- Show gpInfoTemplate sliding in, slide store out
+			gpInfoTemplate.Visible = true
+			local tweenOut = tweenFrame(storeFrame, UDim2.new(-1, 0, originalStorePos.Y.Scale, originalStorePos.Y.Offset))
+			local tweenIn = tweenFrame(gpInfoTemplate, UDim2.new(0, 4, 0, 4))
+
+			tweenFramesWithLock({tweenOut, tweenIn}, function()
+				storeFrame.Visible = false
+			end)
+		end)
+	end
+end
+
+-----------------------------------------
+-- Purchase button click handling
+-----------------------------------------
+
+if purchaseButton and purchaseButton:IsA("TextButton") then
+	connectButtonWithCooldown(purchaseButton, function()
+		if purchaseButton.Text == "PURCHASE" and currentGamepassID then
+			MarketplaceService:PromptGamePassPurchase(player, currentGamepassID)
+		else
+			-- Already owned or no gamepass selected; optionally notify user here
+			print("Gamepass already owned or no gamepass selected; purchase prompt skipped.")
+		end
+	end)
+end
+
+-----------------------------------------
+-- Return button inside GpInfoTemplate brings back Store and hides itself
+-----------------------------------------
+
+local gpReturnButton = gpInfoTemplate:FindFirstChild("Return")
+if gpReturnButton and gpReturnButton:IsA("TextButton") then
+	connectButtonWithCooldown(gpReturnButton, function()
+		storeFrame.Visible = true
+		local tweenOut = tweenFrame(gpInfoTemplate, UDim2.new(1, 0, originalGpInfoPos.Y.Scale, originalGpInfoPos.Y.Offset))
+		local tweenIn = tweenFrame(storeFrame, originalStorePos)
+
+		tweenFramesWithLock({tweenOut, tweenIn}, function()
+			gpInfoTemplate.Visible = false
+		end)
+	end)
+end
+
+-----------------------------------------
+-- Slide transition function (used Main/Teams/Store buttons)
+-----------------------------------------
+
+local function slideTransition(fromFrame, toFrame, reverse)
+	fromFrame.Visible = true
+	toFrame.Visible = true
+
+	if reverse then
+		toFrame.Position = UDim2.new(-1, 0, 0, 0)  -- offscreen LEFT
+
+		local outTween = TweenService:Create(fromFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Position = UDim2.new(1, 0, 0, 0)  -- slide out RIGHT
+		})
+
+		local inTween = TweenService:Create(toFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Position = UDim2.new(0, 0, 0, 0)  -- slide in CENTER
+		})
+
+		tweenFramesWithLock({outTween, inTween}, function()
+			fromFrame.Visible = false
+			fromFrame.Position = UDim2.new(1, 0, 0, 0)  -- reset offscreen RIGHT
+		end)
+	else
+		toFrame.Position = UDim2.new(1, 0, 0, 0)  -- offscreen RIGHT
+
+		local outTween = TweenService:Create(fromFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Position = UDim2.new(-1, 0, 0, 0)  -- slide out LEFT
+		})
+
+		local inTween = TweenService:Create(toFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Position = UDim2.new(0, 0, 0, 0)  -- slide in CENTER
+		})
+
+		tweenFramesWithLock({outTween, inTween}, function()
+			fromFrame.Visible = false
+			fromFrame.Position = UDim2.new(-1, 0, 0, 0)  -- reset offscreen LEFT
+		end)
+	end
+end
+
+-----------------------------------------
+-- Hook up main menu buttons
+-----------------------------------------
+
+local function connectButtons()
+	-- Play button: Main -> Teams
+	local playButton = mainFrame:WaitForChild("Play")
+	connectButtonWithCooldown(playButton, function()
+		slideTransition(mainFrame, teamsFrame)
+	end)
+
+	-- Store button: Main -> Store
+	local storeButton = mainFrame:FindFirstChild("Store")
+	if storeButton and storeButton:IsA("TextButton") then
+		connectButtonWithCooldown(storeButton, function()
+			slideTransition(mainFrame, storeFrame)
+		end)
+	end
+
+	-- Return button in Teams: Teams -> Main
+	local returnButtonTeams = teamsFrame:FindFirstChild("Return")
+	if returnButtonTeams and returnButtonTeams:IsA("TextButton") then
+		connectButtonWithCooldown(returnButtonTeams, function()
+			slideTransition(teamsFrame, mainFrame)
+		end)
+	end
+
+	-- Return button in Store: Store -> Main (with reverse slide)
+	local returnButtonStore = storeFrame:FindFirstChild("Return")
+	if returnButtonStore and returnButtonStore:IsA("TextButton") then
+		connectButtonWithCooldown(returnButtonStore, function()
+			slideTransition(storeFrame, mainFrame, true)
+		end)
+	end
+
+	-- Settings button: Main -> Settings
+	local settingsButton = mainFrame:FindFirstChild("Settings")
+	if settingsButton and settingsButton:IsA("TextButton") then
+		connectButtonWithCooldown(settingsButton, function()
+			slideTransition(mainFrame, settingsFrame)
+		end)
+	end
+
+	-- Return button in Settings: Settings -> Main (reverse)
+	local returnButtonSettings = settingsFrame:FindFirstChild("Return")
+	if returnButtonSettings and returnButtonSettings:IsA("TextButton") then
+		connectButtonWithCooldown(returnButtonSettings, function()
+			slideTransition(settingsFrame, mainFrame, true)
+		end)
+	end
+
+	-- Badges button: Main -> Badges
+	local badgesButton = mainFrame:FindFirstChild("Badges")
+	if badgesButton and badgesButton:IsA("TextButton") then
+		connectButtonWithCooldown(badgesButton, function()
+			slideTransition(mainFrame, badgesFrame)
+		end)
+	end
+
+	-- Return button in Badges: Badges -> Main (reverse)
+	local returnButtonBadges = badgesFrame:FindFirstChild("Return")
+	if returnButtonBadges and returnButtonBadges:IsA("TextButton") then
+		connectButtonWithCooldown(returnButtonBadges, function()
+			slideTransition(badgesFrame, mainFrame, true)
+		end)
+	end
+
+	-- Updates button: Main -> Updates
+	local updatesButton = mainFrame:FindFirstChild("Updates")
+	if updatesButton and updatesButton:IsA("TextButton") then
+		connectButtonWithCooldown(updatesButton, function()
+			slideTransition(mainFrame, updatesFrame)
+		end)
+	end
+
+	-- Return button in Updates: Updates -> Main (reverse)
+	local returnButtonUpdates = updatesFrame:FindFirstChild("Return")
+	if returnButtonUpdates and returnButtonUpdates:IsA("TextButton") then
+		connectButtonWithCooldown(returnButtonUpdates, function()
+			slideTransition(updatesFrame, mainFrame, true)
+		end)
+	end
+end
+
+-----------------------------------------
+-- Camera follow effect
+-----------------------------------------
+
+local function updateCamera()
+	local mouseLocation = uis:GetMouseLocation()
+	local screenCenter = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+	local offset = (mouseLocation - screenCenter) / screenCenter
+
+	local xOffset = -math.clamp(offset.X, -1, 1) * OFFSET_STRENGTH
+	local yOffset = math.clamp(offset.Y, -1, 1) * OFFSET_STRENGTH
+
+	local offsetCFrame = CFrame.Angles(math.rad(-yOffset), math.rad(xOffset), 0)
+	local targetCFrame = BASE_CFRAME * offsetCFrame
+	camera.CFrame = camera.CFrame:Lerp(targetCFrame, RETURN_SPEED * runService.RenderStepped:Wait())
+end
+
+local function setCamera()
+	local character = player.Character or player.CharacterAdded:Wait()
+	character:WaitForChild("Humanoid")
+
+	camera.CameraType = Enum.CameraType.Scriptable
+	camera.CFrame = BASE_CFRAME
+
+	runService:BindToRenderStep("MainMenuCameraFollow", Enum.RenderPriority.Camera.Value + 1, updateCamera)
+end
+
+
+-----------------------------------------
+-- Start up
+-----------------------------------------
+
+resetMenuFrames()
+connectButtons()
+
+if player.Character then
+	setCamera()
+else
+	player.CharacterAdded:Connect(setCamera)
+end
