@@ -1,0 +1,48 @@
+--// MainMenuSystem.lua
+local Players = game:GetService("Players")
+local Teams = game:GetService("Teams")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CAMERA_PART_PATH = workspace:WaitForChild("3DMainMenu"):WaitForChild("CameraPart")
+
+local TEAM_SELECTION = Teams:FindFirstChild("Team Selection")
+
+-- Check if menu is enabled
+local MenuConfig = require(ReplicatedStorage:WaitForChild("MenuConfig"))
+if not MenuConfig.ENABLED then
+	-- Menu is disabled, don't run menu logic
+	return
+end
+
+local function setPlayerToMenu(player)
+	if TEAM_SELECTION then
+		player.Team = TEAM_SELECTION
+	end
+
+	local function onCharacterAdded(character)
+		local camera = workspace.CurrentCamera
+		task.wait() -- Give time for Humanoid to load
+		local humanoid = character:FindFirstChild("Humanoid")
+
+		if player.Team == TEAM_SELECTION then
+			camera.CameraType = Enum.CameraType.Scriptable
+			camera.CFrame = CAMERA_PART_PATH.CFrame
+		else
+			camera.CameraType = Enum.CameraType.Custom
+		end
+	end
+
+	if player.Character then
+		onCharacterAdded(player.Character)
+	end
+
+	player.CharacterAdded:Connect(onCharacterAdded)
+end
+
+Players.PlayerAdded:Connect(function(player)
+	setPlayerToMenu(player)
+end)
+
+-- Optional: make sure they stay in Team Selection on death
+Players.PlayerRemoving:Connect(function(player)
+	player.Team = nil
+end)
