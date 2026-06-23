@@ -1,0 +1,31 @@
+local Players = game:GetService("Players")
+local Teams = game:GetService("Teams")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Check if menu is enabled
+local MenuConfig = require(ReplicatedStorage:WaitForChild("MenuConfig"))
+if not MenuConfig.ENABLED then
+	-- Menu is disabled, don't handle team changes from menu
+	return
+end
+
+local event = ReplicatedStorage:WaitForChild("TeamChangeRequest")
+
+event.OnServerEvent:Connect(function(player, teamName)
+	print("TeamChangeRequest received from", player.Name, "for team:", teamName)
+
+	if typeof(teamName) ~= "string" then
+		warn("Invalid teamName type from", player.Name)
+		return
+	end
+
+	local team = Teams:FindFirstChild(teamName)
+	if not team then
+		warn("Team not found:", teamName)
+		return
+	end
+
+	player.Team = team
+	player:LoadCharacter()
+	print("Team set to", team.Name, "and character respawned.")
+end)
