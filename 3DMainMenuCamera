@@ -1,4 +1,4 @@
--- 3DMainMenuCamera // StaterPlayerScripts
+--// 3DMainMenuCamera
 
 local player = game.Players.LocalPlayer
 local camera = workspace.CurrentCamera
@@ -6,6 +6,14 @@ local runService = game:GetService("RunService")
 local uis = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local MarketplaceService = game:GetService("MarketplaceService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Check if menu is enabled
+local MenuConfig = require(ReplicatedStorage:WaitForChild("MenuConfig"))
+if not MenuConfig.ENABLED then
+	-- Menu is disabled, exit script early
+	return
+end
 
 local screen = workspace:WaitForChild("3DMainMenu"):WaitForChild("Screen")
 local surfaceGui = screen:WaitForChild("SurfaceGui")
