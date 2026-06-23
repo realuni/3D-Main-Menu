@@ -1,0 +1,85 @@
+--// TypewriterHandler.lua
+-- Automatically applies typewriter effect to any TextLabel inside MenuContainer
+-- that contains a NumberValue named "TypewriterSpeed"
+
+local menuRoot = workspace:WaitForChild("3DMainMenu")
+local screen = menuRoot:WaitForChild("Screen")
+local surfaceGui = screen:WaitForChild("SurfaceGui")
+local menuContainer = surfaceGui:WaitForChild("MenuContainer")
+
+local runService = game:GetService("RunService")
+
+------------------------------------------------------------
+-- SETTINGS
+------------------------------------------------------------
+
+-- paste your sound id here:
+local TYPEWRITER_SOUND_ID = "rbxassetid://8816939097"
+local TYPEWRITER_VOLUME = 0.1
+
+------------------------------------------------------------
+-- SOUND FUNCTION
+------------------------------------------------------------
+local function playTypeSound()
+	if TYPEWRITER_SOUND_ID == "" then return end
+
+	local s = Instance.new("Sound")
+	s.SoundId = TYPEWRITER_SOUND_ID
+	s.Volume = TYPEWRITER_VOLUME
+	s.Parent = workspace
+	s.PlayOnRemove = false
+	s:Play()
+
+	s.Ended:Connect(function()
+		s:Destroy()
+	end)
+end
+
+------------------------------------------------------------
+-- TYPEWRITER FUNCTION
+------------------------------------------------------------
+local function typewriter(label, speed)
+	if not label or not label:IsA("TextLabel") then return end
+	if not label.Text or label.Text == "" then return end
+	if label:GetAttribute("AlreadyTyped") then return end
+
+	local fullText = label.Text
+	label.Text = ""
+
+	label:SetAttribute("AlreadyTyped", true)
+
+	for i = 1, #fullText do
+		label.Text = string.sub(fullText, 1, i)
+
+		-- 🔊 Play sound every 2 characters
+		if i % 2 == 0 then
+			playTypeSound()
+		end
+
+		task.wait(speed)
+	end
+end
+
+------------------------------------------------------------
+-- FIND ALL TEXTLABELS WITH TYPEWRITER SPEED
+------------------------------------------------------------
+local function applyTypewriterEffects()
+	for _, obj in ipairs(menuContainer:GetDescendants()) do
+		if obj:IsA("TextLabel") then
+			local speedValue = obj:FindFirstChild("TypewriterSpeed")
+			if speedValue and speedValue:IsA("NumberValue") then
+				local speed = tonumber(speedValue.Value) or 0.03
+				task.spawn(function()
+					typewriter(obj, speed)
+				end)
+			end
+		end
+	end
+end
+
+------------------------------------------------------------
+-- DELAY UNTIL UI IS FULLY VISIBLE, THEN TYPE
+------------------------------------------------------------
+task.wait(0.5)
+
+applyTypewriterEffects()
